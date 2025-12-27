@@ -61,7 +61,7 @@ class GraphNode(VGroup):
 
 class GraphEdge(VGroup):
     """自定义边组件"""
-    def __init__(self, start_node, end_node, weight, color=COLOR_EDGE_DEFAULT, **kwargs):
+    def __init__(self, start_node, end_node, weight, color=COLOR_EDGE_DEFAULT, show_weight=True, **kwargs):
         super().__init__(**kwargs)
         self.start_pos = start_node.circle.get_center()
         self.end_pos = end_node.circle.get_center()
@@ -81,7 +81,9 @@ class GraphEdge(VGroup):
         self.weight_label = Text(str(weight), font_size=16, color=color).move_to(label_pos)
         self.weight_bg = BackgroundRectangle(self.weight_label, color=BLACK, fill_opacity=0.7, buff=0.05)
         
-        self.add(self.line, self.weight_bg, self.weight_label)
+        self.add(self.line)
+        if show_weight:
+            self.add(self.weight_bg, self.weight_label)
 
     def highlight(self, color, width=6):
         return self.line.animate.set_stroke(color=color, width=width)
@@ -131,7 +133,7 @@ class AlgorithmComparisonVideo(Scene):
         self.play_summary()
         self.play_closing()
 
-    def create_graph_visuals(self):
+    def create_graph_visuals(self, show_weights=True):
         nodes = {}
         edges = {}
         graph_group = VGroup()
@@ -142,10 +144,10 @@ class AlgorithmComparisonVideo(Scene):
             graph_group.add(node)
 
         for (start, end), weight in GRAPH_EDGES.items():
-            edge = GraphEdge(nodes[start], nodes[end], weight)
+            edge = GraphEdge(nodes[start], nodes[end], weight, show_weight=show_weights)
             edges[(start, end)] = edge
             edges[(end, start)] = edge
-            graph_group.add(edge, edge.weight_label)
+            graph_group.add(edge)
             
         for node in nodes.values():
             graph_group.add(node)
@@ -167,21 +169,32 @@ class AlgorithmComparisonVideo(Scene):
             author.animate.to_corner(DL).scale(0.6).set_opacity(0.5),
             run_time=1.5
         )
+
+    def show_pros_cons(self, title_text, pros, cons):
+        title = Text(title_text, font_size=40, color=YELLOW).to_edge(UP)
         
-        nodes, edges, graph_group = self.create_graph_visuals()
-        info_text = Text("带权连通图 (S: 起点, T: 终点)", font_size=28, color=GRAY).to_edge(UP)
+        pros_title = Text("优点 (Pros):", font_size=28, color=GREEN).to_edge(LEFT).shift(UP * 1.5 + RIGHT)
+        pros_group = VGroup()
+        for text in pros:
+            dot = Dot(color=GREEN)
+            t = Text(text, font_size=24).next_to(dot, RIGHT)
+            row = VGroup(dot, t)
+            pros_group.add(row)
+        pros_group.arrange(DOWN, aligned_edge=LEFT, buff=0.4).next_to(pros_title, DOWN, aligned_edge=LEFT)
         
-        self.play(Create(graph_group), run_time=2)
-        self.play(FadeIn(info_text))
-        self.wait(1)
+        cons_title = Text("缺点 (Cons):", font_size=28, color=RED).to_edge(RIGHT).shift(UP * 1.5 + LEFT * 4.5)
+        cons_group = VGroup()
+        for text in cons:
+            dot = Dot(color=RED)
+            t = Text(text, font_size=24).next_to(dot, RIGHT)
+            row = VGroup(dot, t)
+            cons_group.add(row)
+        cons_group.arrange(DOWN, aligned_edge=LEFT, buff=0.4).next_to(cons_title, DOWN, aligned_edge=LEFT)
         
-        self.play(
-            nodes["S"].highlight(GREEN),
-            nodes["T"].highlight(RED),
-            run_time=1
-        )
-        self.wait(1)
-        self.play(FadeOut(info_text), FadeOut(graph_group))
+        self.play(Write(title), FadeIn(pros_title), FadeIn(cons_title))
+        self.play(Write(pros_group), Write(cons_group))
+        self.wait(4)
+        self.play(FadeOut(title), FadeOut(pros_title), FadeOut(cons_title), FadeOut(pros_group), FadeOut(cons_group))
 
     def animate_algorithm_intro(self, name, desc, color):
         # 1. 居中展示大标题
@@ -204,25 +217,60 @@ class AlgorithmComparisonVideo(Scene):
         return title, description
 
     def play_bfs_demo(self):
+        # ==================== Part 1: Unweighted BFS ====================
         title, desc = self.animate_algorithm_intro(
-            "BFS: 广度优先搜索", 
-            "使用队列 (Queue) - 先进先出", 
+            "BFS: 广度优先搜索 (无权图)", 
+            "原理：使用队列 (Queue) 层层扩展，寻找最少边数路径", 
             COLOR_BFS
         )
         
-        nodes, edges, graph_group = self.create_graph_visuals()
+        nodes, edges, graph_group = self.create_graph_visuals(show_weights=False)
         ds_viz = DataStructureVisualizer("Queue", COLOR_BFS)
         
         self.play(FadeIn(graph_group), FadeIn(ds_viz))
         
+        self.run_bfs_logic(nodes, edges, ds_viz)
+        
+        self.play(FadeOut(title), FadeOut(desc), FadeOut(graph_group), FadeOut(ds_viz))
+
+        # ==================== Part 2: Weighted BFS ====================
+        title, desc = self.animate_algorithm_intro(
+            "BFS: 广度优先搜索 (有权图)", 
+            "问题：BFS 忽略权重，可能找不到最短路径", 
+            COLOR_BFS
+        )
+        
+        nodes, edges, graph_group = self.create_graph_visuals(show_weights=True)
+        ds_viz = DataStructureVisualizer("Queue", COLOR_BFS)
+        
+        self.play(FadeIn(graph_group), FadeIn(ds_viz))
+        
+        self.run_bfs_logic(nodes, edges, ds_viz)
+        
+        # Show comparison
+        failure_text = Text("BFS 路径成本: 9 (非最短)", font_size=24, color=RED).next_to(graph_group, DOWN)
+        optimal_text = Text("实际最短路径: 6 (S->B->D->T)", font_size=24, color=GREEN).next_to(failure_text, DOWN)
+        
+        self.play(Write(failure_text))
+        self.wait(1)
+        self.play(Write(optimal_text))
+        self.wait(2)
+        
+        self.play(FadeOut(failure_text), FadeOut(optimal_text), FadeOut(title), FadeOut(desc), FadeOut(graph_group), FadeOut(ds_viz))
+        
+        self.show_pros_cons(
+            "BFS 算法总结",
+            ["无权图中保证找到最短路径", "实现简单"],
+            ["无法处理带权图 (忽略权重)", "内存消耗大 (需存储整层节点)"]
+        )
+
+    def run_bfs_logic(self, nodes, edges, ds_viz):
         queue = ["S"]
         visited = {"S"}
         parent = {}
         
-        # 初始入队
         elem = ds_viz.create_element_mobject("S")
         target_pos = ds_viz.get_target_pos(0)
-        # 动画：从底部划入
         elem.move_to(ds_viz.box.get_bottom())
         self.play(
             nodes["S"].highlight(COLOR_BFS),
@@ -236,21 +284,17 @@ class AlgorithmComparisonVideo(Scene):
         while queue:
             current = queue.pop(0)
             
-            # 出队动画：向上移动并消失
             removed_elem = ds_viz.elements.pop(0)
             ds_viz.container_group.remove(removed_elem)
             
-            # 剩余元素上移
-            anims = [
-                removed_elem.animate.shift(UP * 0.8).set_opacity(0),
-            ]
+            anims = [removed_elem.animate.shift(UP * 0.8).set_opacity(0)]
             for i, el in enumerate(ds_viz.elements):
                 anims.append(el.animate.move_to(ds_viz.get_target_pos(i)))
             
-            self.play(*anims, run_time=0.8)
+            self.play(*anims, run_time=0.5)
             self.remove(removed_elem)
             
-            self.play(nodes[current].circle.animate.set_fill(COLOR_BFS, opacity=0.8), run_time=0.5)
+            self.play(nodes[current].circle.animate.set_fill(COLOR_BFS, opacity=0.8), run_time=0.3)
             
             if current == "T":
                 found = True
@@ -268,34 +312,30 @@ class AlgorithmComparisonVideo(Scene):
                     parent[neighbor] = current
                     queue.append(neighbor)
                     
-                    # 入队动画
                     new_elem = ds_viz.create_element_mobject(neighbor)
-                    new_elem.move_to(ds_viz.box.get_bottom()) # 从底部开始
+                    new_elem.move_to(ds_viz.box.get_bottom())
                     target_pos = ds_viz.get_target_pos(len(ds_viz.elements))
                     
                     self.play(
                         edges[(current, neighbor)].highlight(COLOR_BFS, width=4),
                         nodes[neighbor].highlight(COLOR_BFS, opacity=0.3),
                         new_elem.animate.move_to(target_pos),
-                        run_time=1.0
+                        run_time=0.5
                     )
                     ds_viz.elements.append(new_elem)
                     ds_viz.container_group.add(new_elem)
-                    self.wait(0.3)
 
         if found:
             self.show_path(parent, edges, "T", "S")
 
-        self.play(FadeOut(title), FadeOut(desc), FadeOut(graph_group), FadeOut(ds_viz))
-
     def play_dfs_demo(self):
         title, desc = self.animate_algorithm_intro(
             "DFS: 深度优先搜索", 
-            "使用栈 (Stack) - 后进先出", 
+            "原理：使用栈 (Stack) 深度优先探索，尽可能深地搜索分支", 
             COLOR_DFS
         )
         
-        nodes, edges, graph_group = self.create_graph_visuals()
+        nodes, edges, graph_group = self.create_graph_visuals(show_weights=True)
         ds_viz = DataStructureVisualizer("Stack", COLOR_DFS)
         
         self.play(FadeIn(graph_group), FadeIn(ds_viz))
@@ -327,11 +367,11 @@ class AlgorithmComparisonVideo(Scene):
             
             self.play(
                 removed_elem.animate.shift(DOWN * 0.8).set_opacity(0),
-                run_time=0.8
+                run_time=0.5
             )
             self.remove(removed_elem)
             
-            self.play(nodes[current].circle.animate.set_fill(COLOR_DFS, opacity=0.8), run_time=0.5)
+            self.play(nodes[current].circle.animate.set_fill(COLOR_DFS, opacity=0.8), run_time=0.3)
             
             if current == "T":
                 found = True
@@ -357,11 +397,10 @@ class AlgorithmComparisonVideo(Scene):
                         edges[(current, neighbor)].highlight(COLOR_DFS, width=4),
                         nodes[neighbor].highlight(COLOR_DFS, opacity=0.3),
                         new_elem.animate.move_to(target_pos),
-                        run_time=1.0
+                        run_time=0.5
                     )
                     ds_viz.elements.append(new_elem)
                     ds_viz.container_group.add(new_elem)
-                    self.wait(0.3)
 
         if found:
             self.show_path(parent, edges, "T", "S")
@@ -370,16 +409,22 @@ class AlgorithmComparisonVideo(Scene):
         for elem in ds_viz.elements:
             cleanup_anims.append(FadeOut(elem))
         self.play(*cleanup_anims)
+        
+        self.show_pros_cons(
+            "DFS 算法总结",
+            ["内存消耗较小 (仅存储当前路径)", "能快速找到深层目标"],
+            ["不能最快找到最短路径，耗时长", "可能陷入死循环 (需记录访问状态)"]
+        )
 
     def play_dijkstra_demo(self):
         title, desc = self.animate_algorithm_intro(
             "Dijkstra: 最短路径算法", 
-            "优先队列 - 贪心策略", 
+            "原理：使用优先队列，每次扩展距离起点最近的节点 (贪心策略)", 
             COLOR_DIJKSTRA
         )
         formula = Text("dist[v] = min(dist[v], dist[u] + weight(u, v))", font_size=24, color=COLOR_DIJKSTRA).to_edge(DOWN)
         
-        nodes, edges, graph_group = self.create_graph_visuals()
+        nodes, edges, graph_group = self.create_graph_visuals(show_weights=True)
         ds_viz = DataStructureVisualizer("Priority Queue", COLOR_DIJKSTRA)
         
         self.play(FadeIn(graph_group), FadeIn(ds_viz), Write(formula))
@@ -420,14 +465,14 @@ class AlgorithmComparisonVideo(Scene):
                 for i in range(target_index, len(ds_viz.elements)):
                     anims.append(ds_viz.elements[i].animate.move_to(ds_viz.get_target_pos(i)))
                 
-                self.play(*anims, run_time=1.0)
+                self.play(*anims, run_time=0.5)
                 self.remove(removed_elem)
             
             if current in visited:
                 continue
             visited.add(current)
             
-            self.play(nodes[current].circle.animate.set_fill(COLOR_DIJKSTRA, opacity=0.8), run_time=0.5)
+            self.play(nodes[current].circle.animate.set_fill(COLOR_DIJKSTRA, opacity=0.8), run_time=0.3)
             
             if current == "T":
                 break
@@ -440,7 +485,7 @@ class AlgorithmComparisonVideo(Scene):
                         parent[v] = current
                         heapq.heappush(pq, (new_dist, v))
                         
-                        self.play(edges[(current, v)].highlight(COLOR_DIJKSTRA, width=4), run_time=0.5)
+                        self.play(edges[(current, v)].highlight(COLOR_DIJKSTRA, width=4), run_time=0.3)
                         nodes[v].update_info(f"d={new_dist}")
                         
                         new_elem = ds_viz.create_element_mobject(v, str(new_dist))
@@ -448,24 +493,29 @@ class AlgorithmComparisonVideo(Scene):
                         
                         # 简单处理：直接添加到末尾，不模拟堆的重排动画
                         target_pos = ds_viz.get_target_pos(len(ds_viz.elements))
-                        self.play(new_elem.animate.move_to(target_pos), run_time=0.8)
+                        self.play(new_elem.animate.move_to(target_pos), run_time=0.5)
                         
                         ds_viz.elements.append(new_elem)
                         ds_viz.container_group.add(new_elem)
-                        self.wait(0.3)
 
         self.show_path(parent, edges, "T", "S")
         self.play(FadeOut(title), FadeOut(desc), FadeOut(graph_group), FadeOut(ds_viz), FadeOut(formula))
+        
+        self.show_pros_cons(
+            "Dijkstra 算法总结",
+            ["保证找到带权图最短路径", "适用性广"],
+            ["无法处理负权边", "效率低于启发式搜索 (盲目扩展)"]
+        )
 
     def play_astar_demo(self):
         title, desc = self.animate_algorithm_intro(
             "A*: 启发式搜索", 
-            "f(n) = g(n) + h(n)", 
+            "原理：结合实际代价 g(n) 和预估代价 h(n)，优先搜索最有希望的路径", 
             COLOR_ASTAR
         )
         formula = Text("f(n) = g(n) + h(n)", font_size=24, color=COLOR_ASTAR).to_edge(DOWN)
         
-        nodes, edges, graph_group = self.create_graph_visuals()
+        nodes, edges, graph_group = self.create_graph_visuals(show_weights=True)
         ds_viz = DataStructureVisualizer("Open Set", COLOR_ASTAR)
         
         self.play(FadeIn(graph_group), FadeIn(ds_viz), Write(formula))
@@ -506,14 +556,14 @@ class AlgorithmComparisonVideo(Scene):
                 for i in range(target_index, len(ds_viz.elements)):
                     anims.append(ds_viz.elements[i].animate.move_to(ds_viz.get_target_pos(i)))
                 
-                self.play(*anims, run_time=1.0)
+                self.play(*anims, run_time=0.5)
                 self.remove(removed_elem)
                 
             if current in visited:
                 continue
             visited.add(current)
             
-            self.play(nodes[current].circle.animate.set_fill(COLOR_ASTAR, opacity=0.8), run_time=0.5)
+            self.play(nodes[current].circle.animate.set_fill(COLOR_ASTAR, opacity=0.8), run_time=0.3)
             
             if current == "T":
                 break
@@ -527,17 +577,16 @@ class AlgorithmComparisonVideo(Scene):
                         f_score[v] = g_score[v] + heuristic(v)
                         heapq.heappush(pq, (f_score[v], v))
                         
-                        self.play(edges[(current, v)].highlight(COLOR_ASTAR, width=4), run_time=0.5)
+                        self.play(edges[(current, v)].highlight(COLOR_ASTAR, width=4), run_time=0.3)
                         nodes[v].update_info(f"f={f_score[v]}")
                         
                         new_elem = ds_viz.create_element_mobject(v, f"{f_score[v]}")
                         new_elem.move_to(ds_viz.box.get_bottom())
                         target_pos = ds_viz.get_target_pos(len(ds_viz.elements))
-                        self.play(new_elem.animate.move_to(target_pos), run_time=0.8)
+                        self.play(new_elem.animate.move_to(target_pos), run_time=0.5)
                         
                         ds_viz.elements.append(new_elem)
                         ds_viz.container_group.add(new_elem)
-                        self.wait(0.3)
 
         self.show_path(parent, edges, "T", "S")
         
@@ -545,6 +594,12 @@ class AlgorithmComparisonVideo(Scene):
         for elem in ds_viz.elements:
             cleanup_anims.append(FadeOut(elem))
         self.play(*cleanup_anims)
+        
+        self.show_pros_cons(
+            "A* 算法总结",
+            ["效率高 (启发信息剪枝)", "保证找到最短路径 (若 h(n) 可采纳)"],
+            ["内存消耗大 (需存储所有生成节点)", "启发函数设计困难"]
+        )
 
     def show_path(self, parent, edges, start, end):
         path = []
@@ -573,7 +628,7 @@ class AlgorithmComparisonVideo(Scene):
         self.play(FadeIn(graph_group))
         
         paths = {
-            "BFS": (["S", "B", "D", "T"], COLOR_BFS, 0.15),
+            "BFS": (["S", "A", "C", "T"], COLOR_BFS, 0.15), # BFS finds suboptimal path by hop count
             "DFS": (["S", "A", "C", "D", "T"], COLOR_DFS, -0.15),
             "Dijkstra": (["S", "B", "D", "T"], COLOR_DIJKSTRA, 0.05),
             "A*": (["S", "B", "D", "T"], COLOR_ASTAR, -0.05)
@@ -645,6 +700,18 @@ class AlgorithmComparisonVideo(Scene):
 
     def play_closing(self):
         text = Text("Thanks for Watching", font_size=60, gradient=(BLUE, PURPLE))
+        author = Text("计科2403 潘意强制作", font_size=30, color=WHITE)
+        
+        # 初始状态：在屏幕中心，很小
+        author.move_to(ORIGIN).scale(0.01)
+        
         self.play(GrowFromCenter(text))
+        
+        # 平滑放大移动到下方
+        self.play(
+            author.animate.scale(100).next_to(text, DOWN, buff=0.5),
+            run_time=2
+        )
+        
         self.wait(2)
-        self.play(FadeOut(text))
+        self.play(FadeOut(text), FadeOut(author))
